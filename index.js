@@ -2,6 +2,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const sequelize = require('./database');
 const User = require('./User');
+const Article = require('./Article')
 
 sequelize.sync({ force: true }).then( async () => {
     for(let i = 1; i <= 25; i++){
@@ -11,6 +12,11 @@ sequelize.sync({ force: true }).then( async () => {
             password: 'password' + i,
         }
         User.create(user);
+
+        const article = {
+            content: `article content ${i}`
+        }
+        await Article.create(article);
     }
 });
 
@@ -32,9 +38,8 @@ app.post('/users', async (req, res) => {
     res.json({ status: "successful", user: user});
 });
 
-app.get('/users', async (req, res) => {
-
-    const pageAsNumber = Number.parseInt(req.query.page)
+const pagination = (req, res, next) => {
+      const pageAsNumber = Number.parseInt(req.query.page)
     const sizeAsNumber = Number.parseInt(req.query.size)
 
 
@@ -50,6 +55,18 @@ app.get('/users', async (req, res) => {
 
     }
 
+    req.pagination = {
+        page, size
+    }
+    next()
+
+}
+
+app.get('/users', pagination, async (req, res) => {
+    const {page, size } = req.pagination
+
+  
+
     const users = await User.findAndCountAll({
         limit: size,
         offset: page * size
@@ -59,6 +76,33 @@ app.get('/users', async (req, res) => {
         totalPages: Math.ceil(users.count / size)
     });
 })
+
+// app.post('/articles', async (req, res) => {
+//     const { content } = req.body
+
+//     const article = await User.create({
+//         content,
+//     });
+//     res.json({ status: "successful", article: article});
+// });
+
+app.get('/articles', pagination, async (req, res) => {
+
+   const {page, size } = req.pagination
+
+
+  
+
+    const articlesWithCount = await Article.findAndCountAll({
+        limit: size,
+        offset: page * size
+    });
+    res.json({
+        content: articlesWithCount.rows,
+        totalPages: Math.ceil(articlesWithCount.count / size)
+    });
+})
+
 
 function InvalidException(){
     this.status = 400;
@@ -70,12 +114,18 @@ function UserNotFoundException(){
     this.message = "User Not Found";
 }
 
-app.get('/users/:id', async (req, res, next) => {
-
-    const id = Number.parseInt(req.params.id);
+const idNumberControl = (req, res, next) => {
+        const id = Number.parseInt(req.params.id);
     if(Number.isNaN(id)){
-       return next(new InvalidException())
+       throw new InvalidException();
     }
+    next();
+
+}
+
+app.get('/users/:id', idNumberControl, async (req, res, next) => {
+
+    const id = req.params.id
     const user =  await User.findOne({ where: { id: id}})
     if(!user){
         return next(new UserNotFoundException())
@@ -85,7 +135,7 @@ app.get('/users/:id', async (req, res, next) => {
 
 
 
-app.put('/users/:id', async (req, res) => {
+app.put('/users/:id', idNumberControl, async (req, res) => {
     const requestedId = req.params.id;
     const user = await User.findOne({where: { id: requestedId}});
     user.username = req.body.username;
@@ -94,7 +144,7 @@ app.put('/users/:id', async (req, res) => {
 
 })
 
-app.delete('/users/:id', async (req, res) => {
+app.delete('/users/:id', idNumberControl, async (req, res) => {
     const requestedId = req.params.id;
 
     try {
